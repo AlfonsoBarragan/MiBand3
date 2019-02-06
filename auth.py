@@ -41,16 +41,14 @@ class AuthenticationDelegate(DefaultDelegate):
                 self.device.state = AUTH_STATES.AUTH_FAILED
         elif hnd == self.device._char_heart_measure.getHandle():
             self.device.queue.put((QUEUE_TYPES.HEART, data))
-        elif hnd == 0x38:
+        elif hnd == 0x32:
             # Not sure about this, need test
-            if len(data) == 20 and struct.unpack('b', data[0])[0] == 1:
+            if len(data) == 3 and struct.unpack('b', data[0])[0] == 1:
                 self.device.queue.put((QUEUE_TYPES.RAW_ACCEL, data))
             elif len(data) == 16:
                 self.device.queue.put((QUEUE_TYPES.RAW_HEART, data))
         else:
-            self.device._log.error("Unhandled Response " + hex(hnd) + ": " +
-                                   str(data.encode("hex")) + " len:" + str(len(data)))
-
+            self.device._log.error("Unhandled Response " + hex(hnd) + ": "+ str(data.encode("hex")) + " len:" + str(len(data)))
 
 class MiBand3(Peripheral):
     _KEY = b'\x01\x23\x45\x67\x89\x01\x22\x23\x34\x45\x56\x67\x78\x89\x90\x02'
@@ -183,12 +181,17 @@ class MiBand3(Peripheral):
         while True:
             try:
                 res = self.queue.get(False)
+
+                print("++++++++++++++++")
+                print(res)
+                print("++++++++++++++++")
                 _type = res[0]
                 if self.heart_measure_callback and _type == QUEUE_TYPES.HEART:
                     self.heart_measure_callback(struct.unpack('bb', res[1])[1])
                 elif self.heart_raw_callback and _type == QUEUE_TYPES.RAW_HEART:
                     self.heart_raw_callback(self._parse_raw_heart(res[1]))
                 elif self.accel_raw_callback and _type == QUEUE_TYPES.RAW_ACCEL:
+
                     self.accel_raw_callback(self._parse_raw_accel(res[1]))
             except Empty:
                 break
@@ -272,19 +275,36 @@ class MiBand3(Peripheral):
         serial = struct.unpack('12s', data[-12:])[0] if len(data) == 12 else None
         return serial
 
-    def get_steps(self):
+    def get_steps_miband3(self):
         char = self.svc_1.getCharacteristics(UUIDS.CHARACTERISTIC_STEPS)[0]
         a = char.read()
         steps = struct.unpack('h', a[1:3])[0] if len(a) >= 3 else None
         meters = struct.unpack('h', a[5:7])[0] if len(a) >= 7 else None
         fat_gramms = struct.unpack('h', a[2:4])[0] if len(a) >= 4 else None
         # why only 1 byte??
-        callories = struct.unpack('b', a[9])[0] if len(a) >= 10 else None
+        callories = struct.unpack('h', a[9])[0] if len(a) >= 10 else None
+        #callories = a[9] #if len(a) >= 10 else None
+
         return {
             "steps": steps,
             "meters": meters,
             "fat_gramms": fat_gramms,
             "callories": callories
+        }
+
+    def get_steps_miband2(self):
+        char = self.svc_1.getCharacteristics(UUIDS.CHARACTERISTIC_STEPS)[0]
+        a = char.read()
+        steps = struct.unpack('h', a[1:3])[0] if len(a) >= 3 else None
+        # La miband2 no puede dar los metros
+        # meters = struct.unpack('h', a[5:7])[0] if len(a) >= 7 else None
+        fat_gramms = struct.unpack('h', a[2:4])[0] if len(a) >= 4 else None
+        # why only 1 byte??
+
+        return {
+            "steps": steps,
+            "meters": meters,
+            "fat_gramms": fat_gramms
         }
 
     def send_alert(self, _type):
@@ -361,7 +381,7 @@ class MiBand3(Peripheral):
           while True:
             c = f.read(20) #takes 20 bytes :D
             if not c:
-              print "Update Over"
+              print ("Update Over")
               break
             print('Writing Resource', c.encode('hex'))
             char1.write(c)
@@ -377,6 +397,7 @@ class MiBand3(Peripheral):
         print('Update Complete')
         raw_input('Press Enter to Continue')
     def start_raw_data_realtime(self, heart_measure_callback=None, heart_raw_callback=None, accel_raw_callback=None):
+            
             char_m = self.svc_heart.getCharacteristics(UUIDS.CHARACTERISTIC_HEART_RATE_MEASURE)[0]
             char_d = char_m.getDescriptors(forUUID=UUIDS.NOTIFICATION_DESCRIPTOR)[0]
             char_ctrl = self.svc_heart.getCharacteristics(UUIDS.CHARACTERISTIC_HEART_RATE_CONTROL)[0]
